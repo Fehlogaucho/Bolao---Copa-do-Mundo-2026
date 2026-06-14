@@ -22,7 +22,7 @@ function naFase(j,f){
   return j.fase===f;
 }
 
-$('#go').onclick = abrir;
+$('#go').onclick = ()=>abrir();
 $('#rsBtn').onclick = resetSenha;
 $('#syncAllBtn').onclick = sincronizarTudo;
 $('#pw').addEventListener('keydown',e=>{ if(e.key==='Enter') abrir(); });
