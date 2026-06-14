@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0E1B16">
+<title>Bolão da Copa 26</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Archivo:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<div class="wrap">
+
+  <!-- LOGIN / CADASTRO -->
+  <section id="gate" class="gate hide">
+    <div class="hero">
+      <div class="hero-flags">🇨🇦 🇲🇽 🇺🇸</div>
+      <div class="emblema" aria-hidden="true">
+        <svg viewBox="0 0 200 200" width="132" height="132">
+          <defs>
+            <radialGradient id="gBall" cx="38%" cy="34%" r="75%">
+              <stop offset="0%" stop-color="#ffffff"/><stop offset="70%" stop-color="#eef5f0"/><stop offset="100%" stop-color="#c7d6cd"/>
+            </radialGradient>
+            <linearGradient id="gRay" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#FFD23F"/><stop offset="100%" stop-color="#FF8A3C"/>
+            </linearGradient>
+          </defs>
+          <g class="rays">
+            <!-- sunburst -->
+            <g fill="url(#gRay)" opacity=".9">
+              <polygon points="100,4 110,40 90,40"/>
+              <polygon points="196,100 160,110 160,90"/>
+              <polygon points="100,196 90,160 110,160"/>
+              <polygon points="4,100 40,90 40,110"/>
+              <polygon points="168,32 142,58 128,44" opacity=".8"/>
+              <polygon points="168,168 128,156 142,142" opacity=".8"/>
+              <polygon points="32,168 58,142 44,156" opacity=".8"/>
+              <polygon points="32,32 44,58 58,44" opacity=".8"/>
+            </g>
+          </g>
+          <circle cx="100" cy="100" r="52" fill="url(#gBall)" stroke="#0E1B16" stroke-width="3"/>
+          <!-- pentágono central + costuras (bola estilizada) -->
+          <polygon points="100,74 122,90 114,116 86,116 78,90" fill="#13241C"/>
+          <g stroke="#13241C" stroke-width="3.4" fill="none" stroke-linecap="round">
+            <line x1="100" y1="74" x2="100" y2="54"/>
+            <line x1="122" y1="90" x2="142" y2="82"/>
+            <line x1="114" y1="116" x2="126" y2="136"/>
+            <line x1="86" y1="116" x2="74" y2="136"/>
+            <line x1="78" y1="90" x2="58" y2="82"/>
+          </g>
+        </svg>
+      </div>
+      <h2 class="hero-title">Bolão da<br><span>Copa 2026</span></h2>
+      <div class="hero-sub">Canadá · México · Estados Unidos · 11 jun – 19 jul</div>
+    </div>
+
+    <div class="glass">
+      <p id="gateMsg">Entre na sua conta ou crie uma — é só nome e senha.</p>
+      <div class="form" style="flex-direction:column;width:100%">
+        <input id="nameInput" type="text" placeholder="Nome de usuário" autocomplete="username" maxlength="40">
+        <input id="passInput" type="password" placeholder="Senha" autocomplete="current-password">
+        <button class="btn" id="enterBtn" style="padding:13px">Entrar</button>
+        <button class="btn ghost" id="registerBtn" style="padding:13px">Criar conta</button>
+      </div>
+    </div>
+
+    <button class="guest" id="guestBtn">👁️ Ver jogos e resultados</button>
+    <div class="rule" style="margin-top:14px">Cada bolão tem suas próprias regras de pontos, definidas por quem cria.</div>
+  </section>
+
+  <!-- LOBBY -->
+  <section id="lobby" class="hide">
+    <header class="top">
+      <div class="brand"><span class="ball">⚽️</span><h1>Meus <b>Bolões</b></h1></div>
+      <div class="me">
+        <div class="who"><span class="lbl">Você</span><span class="nm" id="lobbyName">—</span>
+          <button class="linkout" id="logoutBtn">sair</button></div>
+      </div>
+    </header>
+    <div id="poolList"><div class="spin">carregando…</div></div>
+
+    <div class="lobby-actions">
+      <div class="act-card">
+        <div class="act-h">Criar um bolão</div>
+        <div class="form"><input id="newPoolName" type="text" placeholder="Nome do bolão (ex: TMD-DL 26)" maxlength="40"></div>
+        <div class="regras-grid">
+          <label>Cravar o placar<input id="rExato" type="number" min="0" max="100" value="5" inputmode="numeric"></label>
+          <label>Acertar vencedor/empate<input id="rResultado" type="number" min="0" max="100" value="3" inputmode="numeric"></label>
+          <label>Bônus por acertar os gols de um time<input id="rGols" type="number" min="0" max="100" value="0" inputmode="numeric"></label>
+        </div>
+        <button class="btn" id="createBtn" style="width:100%;margin-top:10px">Criar bolão</button>
+      </div>
+      <div class="act-card">
+        <div class="act-h">Entrar em um bolão</div>
+        <div class="form">
+          <input id="joinCode" type="text" placeholder="Código (ex: ABC123)" maxlength="6" style="text-transform:uppercase">
+          <button class="btn ghost" id="joinBtn">Entrar</button>
+        </div>
+        <div class="act-sub">Você entra como pendente até o organizador aprovar.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- APP -->
+  <div id="app" class="hide">
+    <header class="top">
+      <div class="poolbar">
+        <button class="linkout" id="backBtn">← bolões</button>
+        <div class="poolinfo"><span class="pname" id="poolName">—</span><span class="pcode" id="poolCode"></span></div>
+        <div class="pooltools">
+          <button class="tool" id="membersBtn" title="Membros">👥<span class="dot" id="pendDot"></span></button>
+          <button class="tool" id="pdfBtn" title="Exportar PDF">📄</button>
+        </div>
+      </div>
+      <div class="regras-bar" id="regrasBar"></div>
+      <div class="me">
+        <div class="who"><span class="lbl">Jogando como</span><span class="nm" id="meName">—</span></div>
+        <div class="stat"><span class="v" id="mePts">0</span><span class="u">pontos</span></div>
+        <div class="stat"><span class="v pos" id="mePos">—</span><span class="u">posição</span></div>
+      </div>
+      <nav class="tabs">
+        <button id="tabJogos" aria-selected="true">Jogos</button>
+        <button id="tabChave" aria-selected="false">Chave</button>
+        <button id="tabRank" aria-selected="false">Ranking</button>
+      </nav>
+    </header>
+
+    <section id="viewJogos">
+      <div class="rounds" id="rounds"></div>
+      <div id="jogosList"><div class="spin">carregando jogos…</div></div>
+    </section>
+    <section id="viewChave" class="hide"><div id="chaveBody"></div></section>
+    <section id="viewRank" class="hide"><div id="rankBody"></div></section>
+    <section id="viewMembros" class="hide">
+      <div class="members-h">Membros do bolão</div>
+      <div id="membersBody"><div class="spin">carregando…</div></div>
+    </section>
+  </div>
+
+</div>
+<div class="toast" id="toast"></div>
+<script src="/app.js"></script>
+</body>
+</html>

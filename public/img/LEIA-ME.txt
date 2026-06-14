@@ -1,0 +1,24 @@
+COMO USAR UM LOGO PRÓPRIO NO PAINEL ADMINISTRATIVO
+==================================================
+
+1. Coloque o arquivo de imagem nesta pasta (public/img/) com o nome EXATO:
+
+      logo.png
+
+   - Formato recomendado: PNG com fundo transparente.
+   - Tamanho sugerido: até ~500 KB; altura boa em torno de 80–160 px.
+
+2. Faça o commit/push para o GitHub (a Cloudflare republica sozinha).
+
+3. Pronto: o logo aparece no topo do painel /admin.
+   Se não houver arquivo "logo.png", o painel mostra o emblema padrão (🛠️) — nada quebra.
+
+OBSERVAÇÃO IMPORTANTE
+---------------------
+A escolha da imagem e o direito de usá-la são de responsabilidade de quem
+publica o aplicativo. Emblemas, logos e mascotes oficiais (por exemplo, da FIFA)
+são marcas registradas; use-os apenas se você tiver autorização/licença para isso.
+
+Quer o mesmo logo na tela pública de login? Em public/index.html, dentro de
+<div class="emblema">, é possível trocar o <svg>...</svg> por:
+   <img src="/img/logo.png" alt="" style="height:132px">

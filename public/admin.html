@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0E1B16">
+<title>Bolão da Copa 26 · Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Archivo:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+<style>
+  .acard{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:9px}
+  .acard.done{border-color:#4a4016}
+  .acard .top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:9px}
+  .acard .t{font-weight:700;font-size:15px;line-height:1.2}
+  .acard .meta{font-size:11px;color:var(--muted);margin-top:2px}
+  .acard .ctl{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .acard input.sc{width:46px;height:42px;text-align:center;font-family:'Anton';font-size:22px;background:var(--surface-2);border:1px solid var(--line);border-radius:8px;color:var(--text)}
+  .acard input.sc:focus{outline:none;border-color:var(--primary)}
+  .acard .x{color:var(--muted);font-weight:700}
+  .acard .who-adv{display:flex;gap:6px;margin-top:8px;width:100%}
+  .acard .who-adv button{flex:1;padding:7px;border-radius:8px;border:1px solid var(--line);background:transparent;color:var(--muted);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit}
+  .acard .who-adv button[aria-selected="true"]{border-color:var(--mint);color:var(--mint);background:#10231a}
+  .filtros{display:flex;gap:6px;margin:10px 0 14px;flex-wrap:wrap}
+  .filtros button{padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--muted);font-weight:700;font-family:inherit;cursor:pointer;font-size:13px}
+  .filtros button[aria-selected="true"]{border-color:var(--mint);color:var(--mint)}
+  .mata-box{background:var(--surface);border:1px solid var(--primary);border-radius:12px;padding:14px;margin-bottom:14px}
+  .mata-box h3{font-family:'Anton';font-size:18px;text-transform:uppercase;margin-bottom:6px;color:var(--primary)}
+  .terc-slot{display:flex;align-items:center;gap:8px;margin:8px 0}
+  .terc-slot label{font-size:13px;flex:1}
+  .terc-slot select{padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--surface-2);color:var(--text);font-family:inherit;flex:1}
+  .src-find{font-size:11px;color:var(--mint);text-decoration:underline;cursor:pointer;background:none;border:none;padding:0;font-family:inherit}
+  .brand-logo{height:40px;width:auto;display:block}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <img class="brand-logo" src="/img/logo.png" alt=""
+           onload="var f=document.getElementById('brandFallback'); if(f) f.style.display='none'"
+           onerror="this.style.display='none'">
+      <span class="ball" id="brandFallback">🛠️</span>
+      <h1>Admin · <b>Copa 26</b></h1>
+    </div>
+  </header>
+
+  <section id="auth" class="gate">
+    <div class="ball">🔒</div>
+    <h2 style="font-size:26px">Painel do organizador</h2>
+    <p>Lance o placar real de cada jogo — vale para <b>todos os bolões</b>. O ranking e o chaveamento se atualizam sozinhos.</p>
+    <div class="form" style="flex-direction:column;max-width:320px">
+      <input id="user" type="text" placeholder="Usuário" autocomplete="off" style="width:100%;padding:13px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--text);font-size:16px;font-family:inherit">
+      <input id="pw" type="password" placeholder="Senha" autocomplete="off" style="width:100%;padding:13px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--text);font-size:16px;font-family:inherit">
+      <button class="btn" id="go" style="width:100%;padding:13px">Abrir painel</button>
+    </div>
+    <a class="linkout" href="/">← voltar ao bolão</a>
+  </section>
+
+  <section id="panel" class="hide">
+    <details class="mata-box" style="border-color:var(--line)">
+      <summary style="cursor:pointer;font-weight:700;font-size:14px">🔑 Resetar senha de um jogador</summary>
+      <div class="hint" style="margin:8px 0">Use quando alguém esquecer a senha. Informe o nome de usuário e a nova senha.</div>
+      <div class="form" style="flex-direction:column;gap:8px">
+        <input id="rsName" type="text" placeholder="Nome do usuário" style="padding:11px;border-radius:8px;border:1px solid var(--line);background:var(--surface-2);color:var(--text);font-family:inherit">
+        <input id="rsPass" type="text" placeholder="Nova senha (mín. 4)" style="padding:11px;border-radius:8px;border:1px solid var(--line);background:var(--surface-2);color:var(--text);font-family:inherit">
+        <button class="btn" id="rsBtn">Definir nova senha</button>
+      </div>
+    </details>
+    <div id="mataWrap"></div>
+    <div class="filtros" id="filtros"></div>
+    <div id="list"></div>
+  </section>
+</div>
+<div class="toast" id="toast"></div>
+<script src="/admin.js"></script>
+</body>
+</html>
