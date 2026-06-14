@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0E1B16">
+<meta name="theme-color" content="#080B09">
 <title>Bolão da Copa 26 · Admin</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -24,7 +24,7 @@
   .acard .who-adv button[aria-selected="true"]{border-color:var(--mint);color:var(--mint);background:#10231a}
   .filtros{display:flex;gap:6px;margin:10px 0 14px;flex-wrap:wrap}
   .filtros button{padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--muted);font-weight:700;font-family:inherit;cursor:pointer;font-size:13px}
-  .filtros button[aria-selected="true"]{border-color:var(--mint);color:var(--mint)}
+  .filtros button[aria-selected="true"]{border-color:var(--primary);color:var(--primary)}
   .mata-box{background:var(--surface);border:1px solid var(--primary);border-radius:12px;padding:14px;margin-bottom:14px}
   .mata-box h3{font-family:'Anton';font-size:18px;text-transform:uppercase;margin-bottom:6px;color:var(--primary)}
   .terc-slot{display:flex;align-items:center;gap:8px;margin:8px 0}
@@ -32,6 +32,9 @@
   .terc-slot select{padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--surface-2);color:var(--text);font-family:inherit;flex:1}
   .src-find{font-size:11px;color:var(--mint);text-decoration:underline;cursor:pointer;background:none;border:none;padding:0;font-family:inherit}
   .brand-logo{height:40px;width:auto;display:block}
+  .sync-box{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
+  .sync-box .hint{font-size:12px;color:var(--muted);margin-top:8px;line-height:1.5}
+  #syncResumo{font-size:12px;color:var(--mint);margin-top:10px;white-space:pre-line}
 </style>
 </head>
 <body>
@@ -59,6 +62,12 @@
   </section>
 
   <section id="panel" class="hide">
+    <div class="sync-box">
+      <button class="btn" id="syncAllBtn" style="width:100%">🔄 Sincronizar todos os placares</button>
+      <div class="hint">Busca na internet o placar dos jogos que <b>já aconteceram</b> e ainda não têm resultado, e lança automaticamente os que encontrar. Confira depois — pode não achar todos (aí é só lançar à mão). Empates de mata-mata não entram sozinhos (falta indicar quem passou nos pênaltis).</div>
+      <div id="syncResumo"></div>
+    </div>
+
     <details class="mata-box" style="border-color:var(--line)">
       <summary style="cursor:pointer;font-weight:700;font-size:14px">🔑 Resetar senha de um jogador</summary>
       <div class="hint" style="margin:8px 0">Use quando alguém esquecer a senha. Informe o nome de usuário e a nova senha.</div>

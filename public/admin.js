@@ -1,4 +1,4 @@
-/* Bolão da Copa 26 — painel do organizador (v2) */
+/* Bolão da Copa 26 — painel do organizador (v3: sincronizar todos) */
 'use strict';
 const $ = (s)=>document.querySelector(s);
 let AUTH = { user:'', pass:'' };
@@ -24,6 +24,7 @@ function naFase(j,f){
 
 $('#go').onclick = abrir;
 $('#rsBtn').onclick = resetSenha;
+$('#syncAllBtn').onclick = sincronizarTudo;
 $('#pw').addEventListener('keydown',e=>{ if(e.key==='Enter') abrir(); });
 
 async function resetSenha(){
@@ -36,6 +37,25 @@ async function resetSenha(){
     $('#rsName').value=''; $('#rsPass').value='';
   }catch(e){ toast(e.message); }
 }
+
+async function sincronizarTudo(){
+  const btn=$('#syncAllBtn'); const resumo=$('#syncResumo');
+  btn.disabled=true; const txt=btn.textContent; btn.textContent='🔄 sincronizando…';
+  resumo.textContent='Buscando placares na internet…';
+  try{
+    const r=await post('admin/sincronizar-tudo',{user:AUTH.user,password:AUTH.pass});
+    const empates=(r.detalhes||[]).filter(d=>d.status==='empate_mata');
+    let linhas=[`${r.aplicados} placar(es) lançado(s) de ${r.total} jogo(s) já iniciado(s) e sem resultado.`];
+    if(r.achados>r.aplicados) linhas.push(`${r.achados-r.aplicados} achado(s) mas não aplicado(s) (precisam de você).`);
+    if(empates.length) linhas.push('Empate(s) de mata-mata: lance à mão indicando quem passou — '+empates.map(e=>'#'+e.match_num).join(', ')+'.');
+    if(!r.aplicados && !r.achados) linhas.push('Nenhum placar encontrado automaticamente. Lance manualmente abaixo.');
+    resumo.textContent=linhas.join('\n');
+    toast(`Sincronizado: ${r.aplicados} de ${r.total}.`, r.aplicados>0);
+    await carregar();
+  }catch(e){ resumo.textContent=''; toast(e.message); }
+  finally{ btn.disabled=false; btn.textContent=txt; }
+}
+
 (function(){ const s=sessionStorage.getItem('sh_admin_auth'); if(s){ try{AUTH=JSON.parse(s); abrir(true);}catch{} } })();
 
 async function abrir(silent){
@@ -143,7 +163,6 @@ async function buscar(id,btn){
 // ---- montar mata-mata (definir os 8 melhores terceiros) ----
 async function renderMataBox(){
   const wrap=$('#mataWrap'); wrap.innerHTML='';
-  // só faz sentido quando há jogos de grupo finalizados
   let prev;
   try{ prev = await api('admin/preview-mata?'+qs({user:AUTH.user,password:AUTH.pass})); }catch{ return; }
   if(!prev.todosGruposCompletos){
@@ -152,10 +171,9 @@ async function renderMataBox(){
       <div class="hint">Os 1º e 2º de cada grupo entram no chaveamento automaticamente. Para definir os <b>8 melhores 3º colocados</b>, finalize todos os grupos.${faltam.length?` Faltam: Grupo ${faltam.join(', ')}.`:''}</div></div>`;
     return;
   }
-  const tercSlots = prev.slotsTerceiro; // [{match_num, opcoes:[grupos], atual}]
-  // mapa grupo->time do 3º
+  const tercSlots = prev.slotsTerceiro;
   const tercDoGrupo={}; prev.terceiros.forEach(t=>tercDoGrupo[t.grupo]=t.time);
-  const melhores = prev.melhoresGrupos; // grupos cujos 3º classificaram
+  const melhores = prev.melhoresGrupos;
   const opcoesValidas = (slot)=> slot.opcoes.filter(g=>melhores.includes(g)).map(g=>({grupo:g,time:tercDoGrupo[g]}));
 
   let html=`<div class="mata-box"><h3>Definir 8 melhores 3º</h3>
