@@ -1,0 +1,9 @@
+{
+  "name": "bolao-copa-2026",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Bolão da Copa 2026 — Cloudflare Pages + D1",
+  "scripts": {
+    "seed:gen": "node gerar-seed.js"
+  }
+}
