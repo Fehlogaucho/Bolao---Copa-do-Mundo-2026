@@ -49,7 +49,7 @@ const FASES = [
 const MATA_ORDEM = ['r32','r16','qf','sf','tp','final'];
 
 const KEY = 'sh_bolao_user', PKEY = 'sh_bolao_pool';
-let ME = null, POOL = null, JOGOS = [], FILTRO = '', aba = 'jogos', RANKING = [], VISITANTE = false;
+let ME = null, POOL = null, JOGOS = [], FILTRO = '', VISTA = null, aba = 'jogos', RANKING = [], VISITANTE = false;
 
 const $ = (s) => document.querySelector(s);
 const api = async (path, opts) => {
@@ -182,7 +182,7 @@ function abrirVisitante(){
   $('#tabRank').style.display = 'none';
   $('#tabChave').style.display = '';
   $('#tabGrupos').style.display = '';
-  FILTRO = ''; trocarAba('jogos'); carregarJogos();
+  FILTRO=''; VISTA=null; trocarAba('jogos'); carregarJogos();
 }
 
 // ================= contexto do bolão =================
@@ -199,7 +199,7 @@ function abrirBolao(pool){
   $('#poolCode').textContent = pool.isOwner ? ('código ' + pool.code) : '';
   $('#membersBtn').style.display = pool.isOwner ? '' : 'none';
   $('#regrasBar').innerHTML = regrasTxt(pool.regras);
-  FILTRO = ''; trocarAba('jogos'); carregarJogos(); carregarRanking();
+  FILTRO=''; VISTA=null; trocarAba('jogos'); carregarJogos(); carregarRanking();
 }
 function trocarAba(a){
   aba = a;
@@ -261,19 +261,30 @@ async function carregarJogos(){
     if(aba==='grupos') renderGrupos();
   }catch(e){ $('#jogosList').innerHTML = `<div class="empty">${e.message}</div>`; }
 }
+const ONTEM_KEY = () => chaveDia.format(new Date(Date.now() - 86400000));
+function escolherVista(){
+  const hoje = chaveDia.format(new Date());
+  if (JOGOS.some(j => chaveDia.format(new Date(j.kickoff)) === hoje)) return 'hoje';
+  if (JOGOS.some(j => chaveDia.format(new Date(j.kickoff)) > hoje)) return 'proximos';
+  return 'ontem';
+}
 function renderFiltros(){
-  if (!FILTRO){
-    const prox = JOGOS.find(j=>j.aberto);
-    FILTRO = prox ? (prox.fase==='grupo' ? 'r'+prox.rodada : (prox.fase==='tp'?'final':prox.fase)) : 'r1';
-  }
-  $('#rounds').innerHTML = FASES.map(f=>`<button data-f="${f.k}" aria-selected="${f.k===FILTRO}">${f.lbl}</button>`).join('');
-  $('#rounds').querySelectorAll('button').forEach(b=> b.onclick = ()=>{ FILTRO=b.dataset.f; renderFiltros(); renderJogos(); });
+  if (!VISTA) VISTA = escolherVista();
+  const segs = [{k:'ontem',l:'Ontem'},{k:'hoje',l:'Hoje'},{k:'proximos',l:'Próximos'}];
+  const r = $('#rounds'); r.className = 'daynav';
+  r.innerHTML = segs.map(s => `<button data-v="${s.k}" aria-selected="${s.k===VISTA}">${s.l}</button>`).join('');
+  r.querySelectorAll('button').forEach(b => b.onclick = () => { VISTA = b.dataset.v; renderFiltros(); renderJogos(); });
 }
 function renderJogos(){
   const pend = VISITANTE ? 0 : JOGOS.filter(j=>j.aberto && !j.palpite).length;
   const aviso = pend ? `<div class="pendalert">⚠️ Você tem <b>${pend}</b> jogo(s) aberto(s) sem palpite</div>` : '';
-  const lista = JOGOS.filter(j=>naFase(j, FILTRO));
-  if (!lista.length){ $('#jogosList').innerHTML = aviso + '<div class="empty">Nenhum jogo nesta fase.</div>'; return; }
+  const hoje = chaveDia.format(new Date());
+  const dk = (j) => chaveDia.format(new Date(j.kickoff));
+  let lista;
+  if (VISTA === 'ontem') { const y = ONTEM_KEY(); lista = JOGOS.filter(j => dk(j) === y); }
+  else if (VISTA === 'proximos') { lista = JOGOS.filter(j => dk(j) > hoje); }
+  else { lista = JOGOS.filter(j => dk(j) === hoje); }
+  if (!lista.length){ $('#jogosList').innerHTML = aviso + `<div class="empty">${VISTA==='ontem'?'Nenhum jogo ontem.':VISTA==='hoje'?'Nenhum jogo hoje.':'Nenhum jogo pela frente.'}</div>`; return; }
   let html=aviso, dia='';
   for (const j of lista){
     const d = new Date(j.kickoff), dk = chaveDia.format(d);
