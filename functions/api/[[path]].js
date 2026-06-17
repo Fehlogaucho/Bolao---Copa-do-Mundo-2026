@@ -2,11 +2,12 @@
 // Rota base: /api/*   (binding do banco: env.DB)
 //
 // Pontuação: cravar placar = 5 · acertar vencedor/empate = 3 · errar = 0
-// Palpite é IMUTÁVEL: uma vez salvo, não muda.
+// Palpite EDITÁVEL até 1h antes do início do jogo; depois disso, trava.
 // Mata-mata: chaveamento completo (R32→final) montado automaticamente conforme os resultados saem.
 
 const FASES_MATA = ['r32', 'r16', 'qf', 'sf', 'tp', 'final'];
 const REGRAS_PADRAO = { exato: 5, resultado: 3, gols: 0 };
+const UMA_HORA_MS = 60 * 60 * 1000; // palpites fecham 1h antes do kickoff
 
 // ---------- helpers ----------
 const json = (data, status = 200) =>
@@ -70,7 +71,6 @@ export async function onRequest(context) {
     if (rota === 'matches' && m === 'GET') return await listarJogos(request, env);
     if (rota === 'predictions' && m === 'POST') return await salvarPalpite(request, env);
     if (rota === 'predictions' && m === 'GET') return await palpitesDoJogo(request, env);
-    if (rota === 'pool-palpites' && m === 'GET') return await poolPalpites(request, env);
     if (rota === 'ranking' && m === 'GET') return await ranking(request, env);
     // bolões (salas)
     if (rota === 'pools' && m === 'GET') return await meusPools(request, env);
@@ -86,7 +86,6 @@ export async function onRequest(context) {
     if (rota === 'admin/preview-mata' && m === 'GET') return await adminPreviewMata(request, env);
     if (rota === 'admin/definir-terceiros' && m === 'POST') return await adminDefinirTerceiros(request, env);
     if (rota === 'admin/buscar-placar' && m === 'POST') return await adminBuscarPlacar(request, env);
-    if (rota === 'admin/sincronizar-tudo' && m === 'POST') return await adminSincronizarTudo(request, env);
     if (rota === 'admin/reset-senha' && m === 'POST') return await adminResetSenha(request, env);
     return erro('Rota não encontrada.', 404);
   } catch (e) {
@@ -166,7 +165,7 @@ async function listarJogos(request, env) {
   const agora = Date.now();
   const out = jogos.map((j) => {
     const definido = !!(j.home && j.away);
-    const aberto = definido && !j.finished && new Date(j.kickoff).getTime() > agora;
+    const aberto = definido && !j.finished && new Date(j.kickoff).getTime() > agora + UMA_HORA_MS;
     const palpite = palpites[j.id] || null;
     let pontos = null;
     if (j.finished && palpite) pontos = calcularPontos(palpite, j, regras);
@@ -180,7 +179,7 @@ async function listarJogos(request, env) {
       finished: !!j.finished, definido, aberto, palpite, pontos,
     };
   });
-  return json({ jogos: out, regras, agora });
+  return json({ jogos: out, regras });
 }
 
 function calcularPontos(palpite, jogo, regras = REGRAS_PADRAO) {
@@ -207,17 +206,13 @@ async function salvarPalpite(request, env) {
     .bind(matchId).first();
   if (!jogo) return erro('Jogo não encontrado.', 404);
   if (!jogo.home || !jogo.away) return erro('Esse jogo ainda não tem os dois times definidos.', 409);
-  // BLOQUEIO: jogo finalizado OU cujo horário de início já passou não aceita palpite (servidor é a autoridade)
-  if (jogo.finished) return erro('Esse jogo já terminou — não dá mais pra palpitar.', 409);
-  if (new Date(jogo.kickoff).getTime() <= Date.now())
-    return erro('Palpites encerrados: a bola já rolou nesse jogo.', 409);
+  if (jogo.finished || new Date(jogo.kickoff).getTime() <= Date.now() + UMA_HORA_MS)
+    return erro('Palpites encerrados: falta menos de 1h para o jogo.', 409);
 
-  // imutável: se já existe palpite, recusa
-  const existe = await env.DB.prepare('SELECT id FROM predictions WHERE player_id = ? AND match_id = ?')
-    .bind(playerId, matchId).first();
-  if (existe) return erro('Você já palpitou nesse jogo e o palpite não pode ser alterado.', 409);
-
-  await env.DB.prepare('INSERT INTO predictions (player_id, match_id, home, away) VALUES (?, ?, ?, ?)')
+  // editável até 1h antes: cria o palpite ou atualiza o existente
+  await env.DB.prepare(
+    `INSERT INTO predictions (player_id, match_id, home, away) VALUES (?, ?, ?, ?)
+     ON CONFLICT(player_id, match_id) DO UPDATE SET home = excluded.home, away = excluded.away`)
     .bind(playerId, matchId, home, away).run();
   return json({ ok: true, palpite: { home, away } });
 }
@@ -231,64 +226,17 @@ async function palpitesDoJogo(request, env) {
   const jogo = await env.DB.prepare('SELECT kickoff, home_score, away_score, finished FROM matches WHERE id = ?')
     .bind(matchId).first();
   if (!jogo) return erro('Jogo não encontrado.', 404);
-  const liberado = jogo.finished || new Date(jogo.kickoff).getTime() <= Date.now();
+  // revela os palpites quando eles fecham (1h antes) — aí ninguém pode mais mudar
+  const liberado = jogo.finished || new Date(jogo.kickoff).getTime() <= Date.now() + UMA_HORA_MS;
   if (!liberado) return json({ liberado: false, palpites: [] });
-  // dentro de um bolão, mostra só os palpites dos membros (dono/aprovados) daquele bolão
-  const rows = (await (poolId
-    ? env.DB.prepare(
-        `SELECT pl.name, pr.home, pr.away FROM predictions pr
-           JOIN players pl ON pl.id = pr.player_id
-           JOIN pool_members pm ON pm.player_id = pr.player_id AND pm.pool_id = ? AND pm.status IN ('owner','approved')
-         WHERE pr.match_id = ? ORDER BY pl.name COLLATE NOCASE`).bind(poolId, matchId)
-    : env.DB.prepare(
-        `SELECT pl.name, pr.home, pr.away FROM predictions pr JOIN players pl ON pl.id = pr.player_id
-         WHERE pr.match_id = ? ORDER BY pl.name COLLATE NOCASE`).bind(matchId)
-  ).all()).results;
+  const rows = (await env.DB.prepare(
+    `SELECT pl.name, pr.home, pr.away FROM predictions pr JOIN players pl ON pl.id = pr.player_id
+     WHERE pr.match_id = ? ORDER BY pl.name COLLATE NOCASE`).bind(matchId).all()).results;
   const palpites = rows.map((r) => ({
     name: r.name, home: r.home, away: r.away,
     pontos: jogo.finished ? calcularPontos({ home: r.home, away: r.away }, jogo, regras) : null,
-    cravou: !!(jogo.finished && r.home === jogo.home_score && r.away === jogo.away_score),
-  })).sort((a, b) => (b.pontos ?? -1) - (a.pontos ?? -1) || a.name.localeCompare(b.name));
+  }));
   return json({ liberado: true, palpites });
-}
-
-// todos os palpites do bolão, por jogo já liberado (para o PDF)
-async function poolPalpites(request, env) {
-  const url = new URL(request.url);
-  const poolId = Number(url.searchParams.get('pool')) || 0;
-  if (!poolId) return erro('Bolão não informado.');
-  const regras = await regrasDoPool(env, poolId);
-  const matches = (await env.DB.prepare(
-    `SELECT id, match_num, fase, grupo, home, away, home_src, away_src, kickoff,
-            home_score, away_score, advance, finished
-     FROM matches ORDER BY kickoff ASC, match_num ASC`).all()).results;
-  const agora = Date.now();
-  const liberadas = matches.filter((m) => m.finished || new Date(m.kickoff).getTime() <= agora);
-  if (!liberadas.length) return json({ jogos: [], regras });
-
-  const rows = (await env.DB.prepare(
-    `SELECT pr.match_id, pl.name, pr.home, pr.away FROM predictions pr
-       JOIN players pl ON pl.id = pr.player_id
-       JOIN pool_members pm ON pm.player_id = pr.player_id AND pm.pool_id = ? AND pm.status IN ('owner','approved')
-     ORDER BY pl.name COLLATE NOCASE`).bind(poolId).all()).results;
-  const byMatch = {};
-  for (const r of rows) (byMatch[r.match_id] = byMatch[r.match_id] || []).push(r);
-
-  const jogos = liberadas.map((mm) => {
-    const ps = (byMatch[mm.id] || []).map((r) => ({
-      name: r.name, home: r.home, away: r.away,
-      pontos: mm.finished ? calcularPontos({ home: r.home, away: r.away }, mm, regras) : null,
-      cravou: !!(mm.finished && r.home === mm.home_score && r.away === mm.away_score),
-    })).sort((a, b) => (b.pontos ?? -1) - (a.pontos ?? -1) || a.name.localeCompare(b.name));
-    return {
-      match_id: mm.id, match_num: mm.match_num, fase: mm.fase, fase_nome: nomeFase(mm.fase),
-      grupo: mm.grupo, kickoff: mm.kickoff, finished: !!mm.finished,
-      home_label: mm.home || slotLabel(mm.home_src), away_label: mm.away || slotLabel(mm.away_src),
-      home_score: mm.home_score, away_score: mm.away_score,
-      palpites: ps,
-    };
-  });
-  return json({ jogos, regras });
 }
 
 // =================================================================
@@ -675,51 +623,25 @@ const PT_EN = {
   'Iraque':'Iraq','Noruega':'Norway','Áustria':'Austria','Jordânia':'Jordan','Portugal':'Portugal','RD Congo':'DR Congo',
   'Inglaterra':'England','Croácia':'Croatia','Gana':'Ghana','Panamá':'Panama','Uzbequistão':'Uzbekistan','Colômbia':'Colombia',
 };
-// apelidos alternativos que a TheSportsDB às vezes usa
-const ALIASES = {
-  'USA':['United States','United States of America'],
-  'Czechia':['Czech Republic'],
-  'South Korea':['Korea Republic','Republic of Korea'],
-  'DR Congo':['Congo DR','Democratic Republic of the Congo','Congo Democratic Republic'],
-  'Ivory Coast':['Cote d Ivoire','Côte d’Ivoire','Cote dIvoire'],
-  'Curacao':['Curaçao'],
-  'Cape Verde':['Cabo Verde'],
-};
 const normTeam = (s) => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
   .toLowerCase().replace(/[^a-z]/g, '');
 
-// gera o conjunto de formas normalizadas aceitáveis para um nome (PT)
-function formasNorm(nomePt) {
-  const en = PT_EN[nomePt] || nomePt;
-  const lista = [nomePt, en, ...(ALIASES[en] || [])];
-  return [...new Set(lista.map(normTeam).filter(Boolean))];
-}
+async function adminBuscarPlacar(request, env) {
+  const { user, pass, body } = await lerAuth(request);
+  if (!checarAdmin(user, pass, env)) return erro('Usuário ou senha incorretos.', 401);
+  const matchId = Number(body.match_id) || 0;
+  const jogo = await env.DB.prepare('SELECT home, away, kickoff FROM matches WHERE id = ?').bind(matchId).first();
+  if (!jogo) return erro('Jogo não encontrado.', 404);
+  if (!jogo.home || !jogo.away) return erro('Esse jogo ainda não tem os dois times definidos.', 409);
 
-// um nome (em formas) bate com o nome de um evento?
-function nomeBate(formas, eventNorm) {
-  if (!eventNorm) return false;
-  for (const f of formas) {
-    if (!f) continue;
-    if (f === eventNorm) return true;
-    const curto = f.length < eventNorm.length ? f : eventNorm;
-    if (curto.length >= 4 && (f.includes(eventNorm) || eventNorm.includes(f))) return true;
-  }
-  return false;
-}
+  const homeEn = PT_EN[jogo.home] || jogo.home;
+  const awayEn = PT_EN[jogo.away] || jogo.away;
+  const alvoH = normTeam(homeEn), alvoA = normTeam(awayEn);
 
-// busca o placar de UM jogo. Retorna {encontrado, home, away, invertido, detalhe} ou {encontrado:false}
-async function buscarPlacarJogo(env, jogo) {
-  if (!jogo.home || !jogo.away) return { encontrado: false };
-  const formasH = formasNorm(jogo.home);
-  const formasA = formasNorm(jogo.away);
-
-  // tenta o dia do kickoff (UTC), o anterior e o seguinte (cobre fusos e jogos de madrugada)
+  // tenta a data do kickoff (UTC) e o dia anterior (fusos das Américas)
   const base = new Date(jogo.kickoff);
-  const datas = [...new Set([
-    new Date(base.getTime() - 86400000),
-    base,
-    new Date(base.getTime() + 86400000),
-  ].map((d) => d.toISOString().slice(0, 10)))];
+  const datas = [base, new Date(base.getTime() - 86400000)]
+    .map((d) => d.toISOString().slice(0, 10));
 
   const KEY = env.SPORTSDB_KEY || '3'; // chave pública gratuita
   for (const d of datas) {
@@ -731,65 +653,20 @@ async function buscarPlacarJogo(env, jogo) {
       const eventos = data.events || [];
       for (const ev of eventos) {
         const liga = (ev.strLeague || '').toLowerCase();
-        if (!liga.includes('world cup') && !liga.includes('fifa') && !liga.includes('copa do mundo')) continue;
-        const evH = normTeam(ev.strHomeTeam), evA = normTeam(ev.strAwayTeam);
-        const casa = nomeBate(formasH, evH) && nomeBate(formasA, evA);
-        const invertido = nomeBate(formasH, evA) && nomeBate(formasA, evH);
-        const temPlacar = ev.intHomeScore != null && ev.intAwayScore != null
-          && ev.intHomeScore !== '' && ev.intAwayScore !== '';
-        if ((casa || invertido) && temPlacar) {
+        if (!liga.includes('world cup') && !liga.includes('fifa')) continue;
+        const h = normTeam(ev.strHomeTeam), a = normTeam(ev.strAwayTeam);
+        const casa = (h.includes(alvoH) || alvoH.includes(h)) && (a.includes(alvoA) || alvoA.includes(a));
+        const invertido = (h.includes(alvoA) || alvoA.includes(h)) && (a.includes(alvoH) || alvoH.includes(a));
+        if ((casa || invertido) && ev.intHomeScore != null && ev.intAwayScore != null) {
           const hs = Number(ev.intHomeScore), as = Number(ev.intAwayScore);
-          return { encontrado: true, invertido,
+          return json({ encontrado: true, invertido,
             home: casa ? hs : as, away: casa ? as : hs,
-            fonte: 'TheSportsDB', detalhe: `${ev.strHomeTeam} ${hs}-${as} ${ev.strAwayTeam}` };
+            fonte: 'TheSportsDB', detalhe: `${ev.strHomeTeam} ${hs}-${as} ${ev.strAwayTeam}` });
         }
       }
     } catch (_) { /* tenta próxima data */ }
   }
-  return { encontrado: false };
-}
-
-async function adminBuscarPlacar(request, env) {
-  const { user, pass, body } = await lerAuth(request);
-  if (!checarAdmin(user, pass, env)) return erro('Usuário ou senha incorretos.', 401);
-  const matchId = Number(body.match_id) || 0;
-  const jogo = await env.DB.prepare('SELECT home, away, kickoff FROM matches WHERE id = ?').bind(matchId).first();
-  if (!jogo) return erro('Jogo não encontrado.', 404);
-  if (!jogo.home || !jogo.away) return erro('Esse jogo ainda não tem os dois times definidos.', 409);
-  const res = await buscarPlacarJogo(env, jogo);
-  if (res.encontrado) return json(res);
   return json({ encontrado: false, msg: 'Não achei o placar automaticamente. Lance manualmente.' });
-}
-
-// SINCRONIZAR TODOS: percorre os jogos já iniciados e sem resultado e tenta lançar o placar achado.
-// Empates de mata-mata não são aplicados sozinhos (faltaria quem avançou nos pênaltis) — viram aviso.
-async function adminSincronizarTudo(request, env) {
-  const { user, pass } = await lerAuth(request);
-  if (!checarAdmin(user, pass, env)) return erro('Usuário ou senha incorretos.', 401);
-
-  const agora = Date.now();
-  const candidatos = (await env.DB.prepare(
-    `SELECT id, match_num, fase, home, away, kickoff
-     FROM matches WHERE finished = 0 AND home IS NOT NULL AND away IS NOT NULL`).all()).results
-    .filter((j) => new Date(j.kickoff).getTime() <= agora);
-
-  let aplicados = 0, achados = 0;
-  const detalhes = [];
-  for (const j of candidatos) {
-    const res = await buscarPlacarJogo(env, j);
-    if (!res.encontrado) { detalhes.push({ match_num: j.match_num, status: 'nao_encontrado' }); continue; }
-    achados++;
-    if (FASES_MATA.includes(j.fase) && res.home === res.away) {
-      detalhes.push({ match_num: j.match_num, status: 'empate_mata', detalhe: res.detalhe });
-      continue; // precisa de decisão manual (pênaltis)
-    }
-    await env.DB.prepare('UPDATE matches SET home_score=?, away_score=?, advance=NULL, finished=1 WHERE id=?')
-      .bind(res.home, res.away, j.id).run();
-    aplicados++;
-    detalhes.push({ match_num: j.match_num, status: 'aplicado', detalhe: res.detalhe });
-  }
-  if (aplicados) await resolverSlots(env);
-  return json({ ok: true, total: candidatos.length, achados, aplicados, detalhes });
 }
 
 // admin reseta a senha de um usuário (caso esqueça)
