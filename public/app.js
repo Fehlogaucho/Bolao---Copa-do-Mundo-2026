@@ -1,4 +1,4 @@
-/* Bolão da Copa 26 — app do jogador (v5: layout em abas-ícone + grupos + trava de horário) */
+/* Bolão da Copa 26 — app do jogador (v6: cards estilo Sports + classificação por grupo) */
 'use strict';
 
 const FLAGS = {
@@ -15,6 +15,32 @@ const FLAGS = {
   'Croácia':'🇭🇷','Gana':'🇬🇭','Panamá':'🇵🇦','Uzbequistão':'🇺🇿','Colômbia':'🇨🇴',
 };
 const flag = (t) => FLAGS[t] || '⚽';
+
+// código ISO p/ bandeiras redondas (circle-flags). Fallback p/ emoji se a imagem falhar.
+const ISO = {
+  'México':'mx','África do Sul':'za','Coreia do Sul':'kr','República Tcheca':'cz',
+  'Canadá':'ca','Bósnia e Herzegovina':'ba','Estados Unidos':'us','Paraguai':'py',
+  'Austrália':'au','Turquia':'tr','Catar':'qa','Suíça':'ch','Brasil':'br','Marrocos':'ma',
+  'Haiti':'ht','Escócia':'gb-sct','Alemanha':'de','Curaçao':'cw','Holanda':'nl','Japão':'jp',
+  'Costa do Marfim':'ci','Equador':'ec','Suécia':'se','Tunísia':'tn','Espanha':'es','Cabo Verde':'cv',
+  'Bélgica':'be','Egito':'eg','Arábia Saudita':'sa','Uruguai':'uy','Irã':'ir','Nova Zelândia':'nz',
+  'Argentina':'ar','Argélia':'dz','França':'fr','Senegal':'sn','Iraque':'iq','Noruega':'no',
+  'Áustria':'at','Jordânia':'jo','Portugal':'pt','RD Congo':'cd','Inglaterra':'gb-eng',
+  'Croácia':'hr','Gana':'gh','Panamá':'pa','Uzbequistão':'uz','Colômbia':'co',
+};
+const FLAG_CDN = 'https://cdn.jsdelivr.net/gh/HatScripts/circle-flags/flags/';
+function flagImg(team, extra = ''){
+  if (!team) return `<div class="sflag empty ${extra}">·</div>`;
+  const emo = flag(team), code = ISO[team];
+  if (!code) return `<div class="sflag ${extra}"><span class="femoji">${emo}</span></div>`;
+  return `<div class="sflag ${extra}"><img class="fimg" src="${FLAG_CDN}${code}.svg" alt="" loading="lazy" data-emo="${emo}" onerror="flagFail(this)"></div>`;
+}
+window.flagFail = function(img){
+  const s = document.createElement('span'); s.className = 'femoji'; s.textContent = img.dataset.emo || '⚽';
+  img.replaceWith(s);
+};
+const cap = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+
 const FASES = [
   { k:'r1', lbl:'1ª rod.' }, { k:'r2', lbl:'2ª rod.' }, { k:'r3', lbl:'3ª rod.' },
   { k:'r32', lbl:'16-avos' }, { k:'r16', lbl:'Oitavas' }, { k:'qf', lbl:'Quartas' },
@@ -23,7 +49,7 @@ const FASES = [
 const MATA_ORDEM = ['r32','r16','qf','sf','tp','final'];
 
 const KEY = 'sh_bolao_user', PKEY = 'sh_bolao_pool';
-let ME = null, POOL = null, JOGOS = [], FILTRO = '', aba = 'jogos', RANKING = [], VISITANTE = false, GLOBAL = false;
+let ME = null, POOL = null, JOGOS = [], FILTRO = '', aba = 'jogos', RANKING = [], VISITANTE = false;
 
 const $ = (s) => document.querySelector(s);
 const api = async (path, opts) => {
@@ -51,17 +77,6 @@ function naFase(j, f) {
 }
 const regrasTxt = (r) => r ? `Cravar <b>${r.exato}</b> · vencedor/empate <b>${r.resultado}</b>` + (r.gols>0?` · gol certo <b>+${r.gols}</b>`:'') : '';
 
-// Recalcula "aberto" no próprio navegador: o jogo só aceita palpite se tem os dois
-// times, NÃO terminou e o horário de início ainda não chegou. Assim, jogos que já
-// começaram/terminaram ficam travados mesmo que a página esteja aberta há horas.
-function recomputarAbertos() {
-  const agora = Date.now();
-  for (const j of JOGOS) {
-    j.definido = !!(j.home && j.away);
-    j.aberto = j.definido && !j.finished && new Date(j.kickoff).getTime() > agora;
-  }
-}
-
 // ================= boot =================
 (function init(){
   try { ME = JSON.parse(localStorage.getItem(KEY)); } catch {}
@@ -69,7 +84,6 @@ function recomputarAbertos() {
   $('#enterBtn').onclick = ()=>autenticar('login');
   $('#registerBtn').onclick = ()=>autenticar('register');
   $('#guestBtn').onclick = abrirVisitante;
-  $('#meusPalpitesBtn').onclick = abrirMeusPalpites;
   $('#passInput').addEventListener('keydown', e=>{ if(e.key==='Enter') autenticar('login'); });
   $('#logoutBtn').onclick = ()=>{ localStorage.removeItem(KEY); localStorage.removeItem(PKEY); ME=null; POOL=null; mostrarGate(); };
   $('#createBtn').onclick = criarBolao;
@@ -78,9 +92,10 @@ function recomputarAbertos() {
   $('#backBtn').onclick = ()=>{ if (VISITANTE){ VISITANTE=false; mostrarGate(); } else irLobby(); };
   $('#membersBtn').onclick = ()=>trocarAba('membros');
   $('#pdfBtn').onclick = exportarPDF;
-  document.querySelectorAll('nav.tabbar .tabitem').forEach(b=> b.onclick = ()=>trocarAba(b.dataset.aba));
-  // se a aba ficar aberta e um jogo começar, ao voltar o foco re-trava a UI
-  document.addEventListener('visibilitychange', ()=>{ if(!document.hidden && aba==='jogos' && JOGOS.length){ renderJogos(); } });
+  $('#tabJogos').onclick = ()=>trocarAba('jogos');
+  $('#tabGrupos').onclick = ()=>trocarAba('grupos');
+  $('#tabChave').onclick = ()=>trocarAba('chave');
+  $('#tabRank').onclick = ()=>trocarAba('rank');
 })();
 
 function show(id){ ['gate','lobby','app'].forEach(s=>$('#'+s).classList.toggle('hide', s!==id)); }
@@ -101,7 +116,6 @@ async function autenticar(modo){
 
 // ================= lobby =================
 async function irLobby(){
-  VISITANTE = false; GLOBAL = false; POOL = null;
   show('lobby'); $('#lobbyName').textContent = ME.name;
   $('#poolList').innerHTML = '<div class="spin">carregando…</div>';
   try{ const { pools } = await api('pools?player=' + ME.id); renderLobby(pools); }
@@ -156,46 +170,30 @@ async function entrarBolao(){
 
 // ================= modo visitante (só ver jogos/resultados) =================
 function abrirVisitante(){
-  VISITANTE = true; GLOBAL = false; POOL = null;
+  VISITANTE = true; POOL = null;
   show('app');
   $('#poolName').textContent = 'Jogos & Resultados';
   $('#poolName').classList.add('guest-title');
   $('#poolCode').textContent = '';
+  // esconde tudo que depende de bolão
   $('#app .me').style.display = 'none';
   $('#regrasBar').style.display = 'none';
   document.querySelector('#app .pooltools').style.display = 'none';
-  $('#tabRank').style.display = 'none';     // sem bolão, sem ranking
-  $('#tabGrupos').style.display = '';
+  $('#tabRank').style.display = 'none';
   $('#tabChave').style.display = '';
-  FILTRO = ''; trocarAba('jogos'); carregarJogos();
-}
-
-// ================= modo "meus palpites" (palpita sem entrar em bolão) =================
-function abrirMeusPalpites(){
-  VISITANTE = false; GLOBAL = true; POOL = null;
-  show('app');
-  $('#poolName').textContent = 'Meus palpites';
-  $('#poolName').classList.add('guest-title');
-  $('#poolCode').textContent = '';
-  $('#app .me').style.display = 'none';      // sem pontuação aqui (varia por bolão)
-  $('#regrasBar').style.display = 'none';
-  document.querySelector('#app .pooltools').style.display = 'none';
-  $('#tabRank').style.display = 'none';       // ranking é por bolão
   $('#tabGrupos').style.display = '';
-  $('#tabChave').style.display = '';
   FILTRO = ''; trocarAba('jogos'); carregarJogos();
 }
 
 // ================= contexto do bolão =================
 function abrirBolao(pool){
-  VISITANTE = false; GLOBAL = false; POOL = pool; localStorage.setItem(PKEY, JSON.stringify(pool));
+  VISITANTE = false; POOL = pool; localStorage.setItem(PKEY, JSON.stringify(pool));
   show('app');
   $('#poolName').classList.remove('guest-title');
   $('#app .me').style.display = '';
   $('#regrasBar').style.display = '';
   document.querySelector('#app .pooltools').style.display = '';
   $('#tabRank').style.display = '';
-  $('#tabGrupos').style.display = '';
   $('#meName').textContent = ME.name;
   $('#poolName').textContent = pool.name;
   $('#poolCode').textContent = pool.isOwner ? ('código ' + pool.code) : '';
@@ -205,13 +203,16 @@ function abrirBolao(pool){
 }
 function trocarAba(a){
   aba = a;
-  document.querySelectorAll('nav.tabbar .tabitem').forEach(b=> b.setAttribute('aria-selected', b.dataset.aba===a));
+  $('#tabJogos').setAttribute('aria-selected', a==='jogos');
+  $('#tabGrupos').setAttribute('aria-selected', a==='grupos');
+  $('#tabChave').setAttribute('aria-selected', a==='chave');
+  $('#tabRank').setAttribute('aria-selected', a==='rank');
   $('#viewJogos').classList.toggle('hide', a!=='jogos');
   $('#viewGrupos').classList.toggle('hide', a!=='grupos');
   $('#viewChave').classList.toggle('hide', a!=='chave');
   $('#viewRank').classList.toggle('hide', a!=='rank');
   $('#viewMembros').classList.toggle('hide', a!=='membros');
-  document.querySelector('nav.tabbar').style.display = a==='membros' ? 'none' : '';
+  document.querySelector('nav.tabs').style.display = a==='membros' ? 'none' : '';
   if (a==='rank') carregarRanking();
   if (a==='chave') renderChave();
   if (a==='grupos') renderGrupos();
@@ -253,9 +254,7 @@ async function decidir(targetId, decision){
 // ================= jogos =================
 async function carregarJogos(){
   try{
-    const url = VISITANTE ? 'matches'
-      : GLOBAL ? `matches?player=${ME.id}`
-      : `matches?player=${ME.id}&pool=${POOL.id}`;
+    const url = VISITANTE ? 'matches' : `matches?player=${ME.id}&pool=${POOL.id}`;
     const { jogos } = await api(url);
     JOGOS = jogos; renderFiltros(); renderJogos();
     if(aba==='chave') renderChave();
@@ -264,31 +263,21 @@ async function carregarJogos(){
 }
 function renderFiltros(){
   if (!FILTRO){
-    recomputarAbertos();
     const prox = JOGOS.find(j=>j.aberto);
     FILTRO = prox ? (prox.fase==='grupo' ? 'r'+prox.rodada : (prox.fase==='tp'?'final':prox.fase)) : 'r1';
   }
   $('#rounds').innerHTML = FASES.map(f=>`<button data-f="${f.k}" aria-selected="${f.k===FILTRO}">${f.lbl}</button>`).join('');
   $('#rounds').querySelectorAll('button').forEach(b=> b.onclick = ()=>{ FILTRO=b.dataset.f; renderFiltros(); renderJogos(); });
 }
-function statusBadge(j){
-  if (j.finished) return '<span class="badge final">Final</span>';
-  if (!j.definido) return '<span class="badge wait">Aguardando</span>';
-  if (!j.aberto)  return '<span class="badge closed">Fechado</span>';
-  if (j.palpite)  return '<span class="badge done">Palpitado ✓</span>';
-  return '<span class="badge open">Aberto</span>';
-}
 function renderJogos(){
-  recomputarAbertos(); // trava jogos já iniciados/terminados antes de desenhar
   const pend = VISITANTE ? 0 : JOGOS.filter(j=>j.aberto && !j.palpite).length;
   const aviso = pend ? `<div class="pendalert">⚠️ Você tem <b>${pend}</b> jogo(s) aberto(s) sem palpite</div>` : '';
-  const globalHint = VISITANTE ? '' : `<div class="globalhint">💡 Você palpita <b>uma vez por jogo</b> e o palpite vale para <b>todos os seus bolões</b>.</div>`;
   const lista = JOGOS.filter(j=>naFase(j, FILTRO));
-  if (!lista.length){ $('#jogosList').innerHTML = globalHint + aviso + '<div class="empty">Nenhum jogo nesta fase.</div>'; return; }
-  let html=globalHint+aviso, dia='';
+  if (!lista.length){ $('#jogosList').innerHTML = aviso + '<div class="empty">Nenhum jogo nesta fase.</div>'; return; }
+  let html=aviso, dia='';
   for (const j of lista){
     const d = new Date(j.kickoff), dk = chaveDia.format(d);
-    if (dk!==dia){ dia=dk; html += `<div class="daygroup"><div class="dayhead">${fmtDia.format(d).replace('.','')}</div></div>`; }
+    if (dk!==dia){ dia=dk; html += `<div class="daygroup"><div class="dayhead">${cap(fmtDia.format(d))}</div></div>`; }
     html += cardJogo(j);
   }
   $('#jogosList').innerHTML = html; bindCards();
@@ -296,82 +285,88 @@ function renderJogos(){
 function cardJogo(j){
   const hora = fmtHora.format(new Date(j.kickoff));
   const g = j.palpite;
-  const editavel = !VISITANTE && j.aberto && !g;
-  const ctx = j.fase==='grupo' ? `Grupo ${j.grupo}` : j.fase_nome;
-  const caixa = (lado, val) => {
-    if (editavel) return `<div class="score">
-      <input class="guess-in" inputmode="numeric" pattern="[0-9]*" maxlength="2" data-side="${lado}" value="" placeholder="–" aria-label="gols">
-      <div class="stepper"><button data-step="up" data-side="${lado}">▲</button><button data-step="down" data-side="${lado}">▼</button></div></div>`;
-    const cls = j.finished ? 'box real' : 'box';
-    return `<div class="score"><div class="${cls}">${val ?? '–'}</div></div>`;
-  };
-  const vHome = j.finished ? j.home_score : (g ? g.home : null);
-  const vAway = j.finished ? j.away_score : (g ? g.away : null);
+  const editavel = !VISITANTE && j.aberto;
+  const ctx = j.fase==='grupo' ? `Fase de grupos · ${j.rodada}ª rodada` : j.fase_nome;
   const venc = j.finished ? (j.advance==='home'?'home':j.advance==='away'?'away'
       : j.home_score>j.away_score?'home':j.away_score>j.home_score?'away':null) : null;
-  const linha = (lado, nome, val) => `<div class="team ${venc===lado?'win':''}">
-      <span class="flag">${j[lado]?flag(nome):'·'}</span><span class="name">${nome}</span>${caixa(lado, val)}</div>`;
 
-  let foot = '';
-  const podeVer = !VISITANTE && j.definido && !j.aberto; // a bola já rolou → pode ver os palpites do bolão
-  if (VISITANTE){
-    foot = j.finished
-      ? `<span class="hint">✅ encerrado</span>`
-      : (!j.definido ? `<span class="hint">⏳ aguardando a definição dos times</span>`
-         : (j.aberto ? `<span class="hint">🕒 ainda não começou</span>` : `<span class="hint warn">⏱ em andamento / aguardando placar</span>`));
+  // células centrais: inputs (palpite) ou placar
+  let homeCell, awayCell, midTxt, midCls = 'smatch-mid';
+  if (editavel){
+    homeCell = `<input class="gbox" inputmode="numeric" pattern="[0-9]*" maxlength="2" data-side="home" value="${g?g.home:''}" placeholder="–" aria-label="gols mandante">`;
+    awayCell = `<input class="gbox" inputmode="numeric" pattern="[0-9]*" maxlength="2" data-side="away" value="${g?g.away:''}" placeholder="–" aria-label="gols visitante">`;
+    midTxt = '<span class="x">×</span>';
   } else if (j.finished){
-    if (GLOBAL){
-      foot = g ? `<span class="hint">seu palpite: ${g.home}×${g.away}</span>` : `<span class="hint">você não palpitou</span>`;
-    } else {
-      const p = j.pontos;
-      const pp = p===null ? '<span class="hint">você não palpitou</span>'
-        : `<span class="pts ${p?'':'zero'}">${p>0?'+':''}${p} pts</span>`;
-      const seu = g ? `<span class="hint">seu palpite: ${g.home}×${g.away}</span>` : '';
-      foot = `${pp}${seu}`;
-    }
+    homeCell = `<div class="score-big real">${j.home_score}</div>`;
+    awayCell = `<div class="score-big real">${j.away_score}</div>`;
+    midTxt = 'Final'; midCls = 'smatch-mid final';
   } else if (!j.definido){
-    foot = `<span class="hint">⏳ aguardando a definição dos times</span>`;
+    homeCell = '<div class="score-big dim">–</div>';
+    awayCell = '<div class="score-big dim">–</div>';
+    midTxt = '<span class="x">×</span>';
   } else if (g){
-    foot = j.aberto
-      ? `<span class="hint lock">🔒 Palpitado ${g.home}×${g.away} — não pode mudar</span>`
-      : `<span class="hint">seu palpite: ${g.home}×${g.away}</span>`;
-  } else if (j.aberto){
-    foot = `<span class="hint">depois de salvar não dá pra mudar</span><button class="btn save-btn" data-id="${j.id}">Salvar</button>`;
+    homeCell = `<div class="score-big">${g.home}</div>`;
+    awayCell = `<div class="score-big">${g.away}</div>`;
+    midTxt = hora;
   } else {
-    foot = `<span class="hint warn">⏱ jogo já começou · sem palpite</span>`;
+    homeCell = '<div class="score-big dim">–</div>';
+    awayCell = '<div class="score-big dim">–</div>';
+    midTxt = hora;
   }
-  if (podeVer) foot += `<button class="btn ghost peek-btn" data-id="${j.id}">ver palpites</button>`;
-  return `<div class="match" data-id="${j.id}">
-    <div class="head"><span class="grp">${ctx} · ${hora} · <span class="city">${j.city||''}</span></span>${statusBadge(j)}</div>
-    ${linha('home', j.home_label, vHome)}${linha('away', j.away_label, vAway)}
-    <div class="foot">${foot}</div><div class="peek" data-peek="${j.id}"></div></div>`;
+
+  // rodapé (pontos / palpite / ações)
+  let foot = '';
+  if (VISITANTE){
+    foot = j.finished ? '<span class="hint">✅ encerrado</span>'
+      : (!j.definido ? '<span class="hint">⏳ aguardando a definição dos times</span>'
+         : (j.aberto ? '<span class="hint">🕒 ainda não começou</span>' : '<span class="hint warn">⏱ em andamento / aguardando placar</span>'));
+  } else if (j.finished){
+    const p = j.pontos;
+    const pp = p===null ? '<span class="hint">você não palpitou</span>'
+      : `<span class="pts ${p?'':'zero'}">${p>0?'+':''}${p} pts</span>`;
+    const seu = g ? `<span class="hint">seu palpite: ${g.home}×${g.away}</span>` : '';
+    foot = `${pp}${seu}<button class="btn ghost peek-btn" data-id="${j.id}">ver palpites</button>`;
+  } else if (!j.definido){
+    foot = '<span class="hint">⏳ aguardando a definição dos times</span>';
+  } else if (editavel){
+    foot = g
+      ? `<span class="hint">✏️ pode mudar até 1h antes do jogo</span><button class="btn save-btn" data-id="${j.id}">Atualizar</button>`
+      : '<span class="hint">⏰ palpite aberto · dá pra mudar até 1h antes</span><button class="btn save-btn" data-id="'+j.id+'">Salvar</button>';
+  } else if (g){
+    foot = `<span class="hint lock">🔒 Palpitado ${g.home}×${g.away} — palpites fechados</span>`;
+  } else {
+    foot = '<span class="hint warn">⏱ fechado · sem palpite</span>';
+  }
+
+  return `<div class="smatch" data-id="${j.id}">
+    <div class="smatch-label">${ctx} · ${hora}${j.city?` · <span class="city">${j.city}</span>`:''}</div>
+    <div class="smatch-row">
+      <div class="steam ${venc==='home'?'win':''}">${flagImg(j.home)}<div class="snm">${j.home_label}</div></div>
+      ${homeCell}
+      <div class="${midCls}">${midTxt}</div>
+      ${awayCell}
+      <div class="steam ${venc==='away'?'win':''}">${flagImg(j.away)}<div class="snm">${j.away_label}</div></div>
+    </div>
+    <div class="foot">${foot}</div>
+    <div class="peek" data-peek="${j.id}"></div>
+  </div>`;
 }
 function bindCards(){
-  document.querySelectorAll('.stepper button').forEach(b=>{
-    b.onclick = ()=>{ const inp = b.closest('.match').querySelector(`.guess-in[data-side="${b.dataset.side}"]`);
-      let v = parseInt(inp.value,10); if(isNaN(v)) v=0; v += b.dataset.step==='up'?1:-1; inp.value = Math.max(0, Math.min(30, v)); };
-  });
-  document.querySelectorAll('.guess-in').forEach(inp=> inp.addEventListener('input', ()=>{ inp.value = inp.value.replace(/[^0-9]/g,'').slice(0,2); }));
+  document.querySelectorAll('.gbox').forEach(inp=> inp.addEventListener('input', ()=>{ inp.value = inp.value.replace(/[^0-9]/g,'').slice(0,2); }));
   document.querySelectorAll('.save-btn').forEach(b=> b.onclick = ()=>salvar(Number(b.dataset.id), b));
   document.querySelectorAll('.peek-btn').forEach(b=> b.onclick = ()=>verPalpites(Number(b.dataset.id), b));
 }
 async function salvar(id, btn){
-  // trava no cliente: se o jogo já começou/terminou desde que a tela carregou, não envia
-  const j = JOGOS.find(x=>x.id===id);
-  if (!j || j.finished || new Date(j.kickoff).getTime() <= Date.now()){
-    toast('Esse jogo já começou ou terminou — não dá mais pra palpitar.');
-    renderJogos(); // re-trava a UI
-    return;
-  }
-  const card = document.querySelector(`.match[data-id="${id}"]`);
-  const h = card.querySelector('.guess-in[data-side="home"]').value;
-  const a = card.querySelector('.guess-in[data-side="away"]').value;
+  const card = document.querySelector(`.smatch[data-id="${id}"]`);
+  const h = card.querySelector('.gbox[data-side="home"]').value;
+  const a = card.querySelector('.gbox[data-side="away"]').value;
   if (h==='' || a===''){ toast('Preencha os dois placares.'); return; }
+  if (!confirm(`Confirmar palpite ${h} × ${a}?\n\nDá pra mudar até 1h antes do jogo.`)) return;
   btn.disabled = true;
   try{
     await post('predictions', { player_id:ME.id, match_id:id, home:Number(h), away:Number(a) });
-    if(j) j.palpite = { home:Number(h), away:Number(a) };
-    toast('Palpite salvo! Não pode mais ser alterado.', true); renderJogos();
+    const j = JOGOS.find(x=>x.id===id); if(j) j.palpite = { home:Number(h), away:Number(a) };
+    toast('Palpite salvo!', true); renderJogos();
   }catch(e){ toast(e.message); btn.disabled = false; }
 }
 async function verPalpites(id, btn){
@@ -379,26 +374,25 @@ async function verPalpites(id, btn){
   if (peek.classList.contains('show')){ peek.classList.remove('show'); btn.textContent='ver palpites'; return; }
   peek.innerHTML = '<div class="row">carregando…</div>'; peek.classList.add('show'); btn.textContent='ocultar';
   try{
-    const poolParam = POOL ? `&pool=${POOL.id}` : '';
-    const { liberado, palpites } = await api(`predictions?match=${id}${poolParam}`);
-    if (!liberado){ peek.innerHTML = '<div class="row">os palpites aparecem quando a bola rolar.</div>'; return; }
+    const { liberado, palpites } = await api(`predictions?match=${id}&pool=${POOL.id}`);
+    if (!liberado){ peek.innerHTML = '<div class="row">os palpites aparecem quando o palpite fecha (1h antes do jogo).</div>'; return; }
     if (!palpites.length){ peek.innerHTML = '<div class="row">ninguém palpitou neste jogo.</div>'; return; }
     peek.innerHTML = palpites.map(p=>`<div class="row"><b>${p.name}</b>
       <span>${p.home}×${p.away} ${p.pontos!=null?`<span class="pp">+${p.pontos}</span>`:''}</span></div>`).join('');
   }catch(e){ peek.innerHTML = `<div class="row">${e.message}</div>`; }
 }
 
-// ================= grupos (classificação) =================
+// ================= grupos (classificação calculada no navegador) =================
 function standingsGrupo(jogos){
   const t = {};
   const add = (time)=> (t[time] = t[time] || { time, j:0, v:0, e:0, d:0, gp:0, gc:0, pts:0 });
-  for (const j of jogos){ add(j.home); add(j.away); }
+  for (const j of jogos){ if (j.home) add(j.home); if (j.away) add(j.away); }
   for (const j of jogos){
-    if (!j.finished || j.home_score==null) continue;
-    const h=t[j.home], a=t[j.away];
-    h.j++; a.j++; h.gp+=j.home_score; h.gc+=j.away_score; a.gp+=j.away_score; a.gc+=j.home_score;
-    if (j.home_score>j.away_score){ h.v++; h.pts+=3; a.d++; }
-    else if (j.home_score<j.away_score){ a.v++; a.pts+=3; h.d++; }
+    if (!j.finished || j.home_score == null) continue;
+    const h = t[j.home], a = t[j.away]; if (!h || !a) continue;
+    h.j++; a.j++; h.gp += j.home_score; h.gc += j.away_score; a.gp += j.away_score; a.gc += j.home_score;
+    if (j.home_score > j.away_score){ h.v++; h.pts += 3; a.d++; }
+    else if (j.home_score < j.away_score){ a.v++; a.pts += 3; h.d++; }
     else { h.e++; a.e++; h.pts++; a.pts++; }
   }
   return Object.values(t).map(x=>({ ...x, sg:x.gp-x.gc }))
@@ -407,26 +401,25 @@ function standingsGrupo(jogos){
 function renderGrupos(){
   if (!JOGOS.length){ $('#gruposBody').innerHTML = '<div class="spin">carregando…</div>'; return; }
   const grupos = {};
-  for (const j of JOGOS) if (j.fase==='grupo' && j.grupo) (grupos[j.grupo] = grupos[j.grupo] || []).push(j);
+  for (const j of JOGOS) if (j.fase==='grupo') (grupos[j.grupo] = grupos[j.grupo] || []).push(j);
   const letras = Object.keys(grupos).sort();
-  if (!letras.length){ $('#gruposBody').innerHTML = '<div class="empty">Sem grupos cadastrados.</div>'; return; }
-  let html = '<p class="grp-intro">Classificação ao vivo conforme os resultados saem. Os <b>2 primeiros</b> de cada grupo avançam direto; os melhores 3º também podem se classificar.</p>';
+  if (!letras.length){ $('#gruposBody').innerHTML = '<div class="empty">Sem jogos de grupo.</div>'; return; }
+  let html = '<p class="chave-intro">Classificação ao vivo. Os <b>2 primeiros</b> de cada grupo (em verde) vão direto ao mata-mata; os melhores 3º entram depois. Desempate: pontos → saldo → gols.</p>';
   for (const g of letras){
     const tab = standingsGrupo(grupos[g]);
-    const temJogo = grupos[g].some(j=>j.finished);
-    html += `<div class="grp-block">
-      <div class="grp-head"><span class="grp-tag">Grupo</span><b>${g}</b></div>
-      <table class="grp-table">
-        <thead><tr><th>#</th><th class="h-sel">Seleção</th><th>J</th><th>V</th><th>E</th><th>D</th><th>SG</th><th>Pts</th></tr></thead>
-        <tbody>${tab.map((r,i)=>`<tr class="${i<2?'qualif':''}">
-          <td><span class="pos-circ ${i<2?'q':''}">${i+1}</span></td>
-          <td class="sel"><div class="selwrap"><span class="flag">${flag(r.time)}</span><span class="nm">${r.time}</span></div></td>
-          <td>${r.j}</td><td>${r.v}</td><td>${r.e}</td><td>${r.d}</td>
-          <td>${r.sg>0?'+':''}${r.sg}</td><td class="pts-col">${r.pts}</td>
-        </tr>`).join('')}</tbody>
-      </table>
-      ${temJogo ? '' : '<div class="grp-empty">Ainda sem jogos disputados neste grupo.</div>'}
-    </div>`;
+    html += `<div class="gtbl"><div class="gtbl-h">Grupo ${g}</div>
+      <div class="gt-row gt-head"><span class="gt-pos"></span><span class="gt-team">Time</span><span>J</span><span>V</span><span>E</span><span>D</span><span>SG</span><span class="gt-pts">PTS</span></div>`;
+    tab.forEach((r,i)=>{
+      const sgTxt = (r.sg>0?'+':'') + r.sg;
+      const sgCls = r.sg>0?'pos':r.sg<0?'neg':'';
+      html += `<div class="gt-row ${i<2?'q':''}">
+        <span class="gt-pos">${i+1}</span>
+        <span class="gt-team">${flagImg(r.time)}<span class="gt-nm">${r.time}</span></span>
+        <span>${r.j}</span><span>${r.v}</span><span>${r.e}</span><span>${r.d}</span>
+        <span class="${sgCls}">${sgTxt}</span><span class="gt-pts">${r.pts}</span>
+      </div>`;
+    });
+    html += '</div>';
   }
   $('#gruposBody').innerHTML = html;
 }
@@ -498,8 +491,6 @@ async function exportarPDF(){
   toast('Gerando PDF…');
   let ranking = RANKING;
   try{ const r = await api('ranking?pool=' + POOL.id); ranking = r.ranking; }catch{}
-  let poolJogos = [];
-  try{ const pp = await api('pool-palpites?pool=' + POOL.id); poolJogos = pp.jogos || []; }catch{}
   const dataGer = fmtData.format(new Date());
   const r = POOL.regras || {exato:5,resultado:3,gols:0};
 
@@ -515,19 +506,6 @@ async function exportarPDF(){
       <td>${j.home_label} × ${j.away_label}</td><td class="c">${meu}</td><td class="c">${real||'-'}</td><td class="c b">${pts}</td></tr>`;
   }).join('');
 
-  const palpitesTodosHtml = poolJogos.filter(j=>j.palpites.length).map(j=>{
-    const real = j.finished ? `${j.home_score}×${j.away_score}` : 'em andamento';
-    const ctx = j.grupo ? 'G'+j.grupo : (j.fase_nome||j.fase);
-    const linhas = j.palpites.map(p=>{
-      const pin = p.pontos!=null ? `${p.pontos>0?'+':''}${p.pontos}` : '—';
-      const eu = p.name===ME.name;
-      return `<tr${eu?' class="me"':''}><td>${p.name}${eu?' (você)':''}</td>
-        <td class="c">${p.home}×${p.away}${p.cravou?' 🎯':''}</td><td class="c b">${pin}</td></tr>`;
-    }).join('');
-    return `<div class="jg"><div class="jgh">#${j.match_num} · ${ctx} · ${j.home_label} × ${j.away_label} — <b>${real}</b></div>
-      <table class="pt-tbl"><thead><tr><th>Participante</th><th>Palpite</th><th>Pts</th></tr></thead><tbody>${linhas}</tbody></table></div>`;
-  }).join('');
-
   const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${POOL.name} — ${ME.name}</title>
   <style>*{font-family:Arial,Helvetica,sans-serif;box-sizing:border-box}body{margin:24px;color:#142019}
     h1{margin:0;font-size:22px}h2{font-size:15px;margin:22px 0 6px;border-bottom:2px solid #0E7A4B;padding-bottom:3px;color:#0E7A4B}
@@ -536,9 +514,6 @@ async function exportarPDF(){
     table{width:100%;border-collapse:collapse;font-size:11px;margin-top:4px}
     th,td{border:1px solid #ccc;padding:4px 6px;text-align:left}th{background:#142019;color:#fff;font-size:10px;text-transform:uppercase}
     td.c{text-align:center}td.b{font-weight:bold}tr.me{background:#e9f9f1}
-    .jg{margin:9px 0;break-inside:avoid;page-break-inside:avoid}
-    .jgh{font-size:11px;font-weight:bold;background:#eef4f0;padding:5px 7px;border:1px solid #ccc;border-bottom:none}
-    .pt-tbl{margin-top:0}
     .foot{margin-top:18px;color:#888;font-size:10px;text-align:center}@media print{body{margin:10mm}}</style></head><body>
     <div class="head"><div><h1>🏆 ${POOL.name}</h1><div class="sub">Bolão da Copa 2026 · jogador: <b>${ME.name}</b></div></div>
       <div class="sub">gerado em ${dataGer}</div></div>
@@ -547,9 +522,6 @@ async function exportarPDF(){
     <table><thead><tr><th>#</th><th>Participante</th><th>Cravadas</th><th>Pontos</th></tr></thead><tbody>${rankHtml}</tbody></table>
     <h2>Todos os jogos &amp; meus palpites</h2>
     <table><thead><tr><th>Data</th><th>Fase</th><th>Jogo</th><th>Meu palpite</th><th>Placar</th><th>Pts</th></tr></thead><tbody>${jogosHtml}</tbody></table>
-    <h2>Palpites de todos &middot; por jogo</h2>
-    <div class="sub" style="margin-bottom:6px">🎯 = cravou o placar exato. As pontuações seguem as regras deste bolão.</div>
-    ${palpitesTodosHtml || '<p class="sub">Os palpites de todos aparecem aqui assim que cada jogo começa.</p>'}
     <div class="foot">O chaveamento se completa automaticamente até a final.</div>
     <script>window.onload=()=>{setTimeout(()=>window.print(),350)}<\/script></body></html>`;
   const w = window.open('', '_blank');
