@@ -72,6 +72,7 @@ export async function onRequest(context) {
     if (rota === 'predictions' && m === 'POST') return await salvarPalpite(request, env);
     if (rota === 'predictions' && m === 'GET') return await palpitesDoJogo(request, env);
     if (rota === 'ranking' && m === 'GET') return await ranking(request, env);
+    if (rota === 'compare' && m === 'GET') return await comparar(request, env);
     // bolões (salas)
     if (rota === 'pools' && m === 'GET') return await meusPools(request, env);
     if (rota === 'pools' && m === 'POST') return await criarPool(request, env);
@@ -267,6 +268,69 @@ async function ranking(request, env) {
     return { ...r, posicao: pos };
   });
   return json({ ranking: tabela, regras });
+}
+
+// =================================================================
+// COMPARATIVO — palpites de 2 jogadores lado a lado, jogo a jogo
+// =================================================================
+async function comparar(request, env) {
+  const url = new URL(request.url);
+  const poolId = Number(url.searchParams.get('pool')) || 0;
+  const aId = Number(url.searchParams.get('a')) || 0;
+  const bId = Number(url.searchParams.get('b')) || 0;
+  if (!poolId || !aId || !bId) return erro('Parâmetros inválidos.');
+  if (aId === bId) return erro('Escolha dois jogadores diferentes.');
+  const regras = await regrasDoPool(env, poolId);
+
+  // a e b precisam ser membros (owner/approved) do bolão
+  const membros = (await env.DB.prepare(
+    `SELECT pl.id, pl.name FROM pool_members pm JOIN players pl ON pl.id = pm.player_id
+     WHERE pm.pool_id = ? AND pm.status IN ('owner','approved') AND pl.id IN (?, ?)`)
+    .bind(poolId, aId, bId).all()).results;
+  const nome = {};
+  for (const m of membros) nome[m.id] = m.name;
+  if (!nome[aId] || !nome[bId]) return erro('Jogador não participa deste bolão.', 404);
+
+  const jogos = (await env.DB.prepare(
+    `SELECT id, match_num, fase, grupo, rodada, home, away, home_src, away_src, kickoff,
+            home_score, away_score, advance, finished
+     FROM matches ORDER BY kickoff ASC, match_num ASC`).all()).results;
+
+  const preds = (await env.DB.prepare(
+    `SELECT player_id, match_id, home, away FROM predictions WHERE player_id IN (?, ?)`)
+    .bind(aId, bId).all()).results;
+  const pa = {}, pb = {};
+  for (const p of preds) (p.player_id === aId ? pa : pb)[p.match_id] = { home: p.home, away: p.away };
+
+  const agora = Date.now();
+  let totalA = 0, totalB = 0, cravA = 0, cravB = 0;
+  const out = [];
+  for (const j of jogos) {
+    const liberado = !!j.finished || new Date(j.kickoff).getTime() <= agora + UMA_HORA_MS;
+    if (!liberado) continue;                 // só mostra jogo com palpite já fechado
+    const palA = pa[j.id] || null, palB = pb[j.id] || null;
+    if (!palA && !palB) continue;            // nenhum dos dois palpitou
+    let ptsA = null, ptsB = null;
+    if (j.finished) {
+      ptsA = palA ? calcularPontos(palA, j, regras) : 0;
+      ptsB = palB ? calcularPontos(palB, j, regras) : 0;
+      totalA += ptsA; totalB += ptsB;
+      if (palA && palA.home === j.home_score && palA.away === j.away_score) cravA++;
+      if (palB && palB.home === j.home_score && palB.away === j.away_score) cravB++;
+    }
+    out.push({
+      match_num: j.match_num, fase: j.fase, fase_nome: nomeFase(j.fase), grupo: j.grupo,
+      kickoff: j.kickoff,
+      home_label: j.home || slotLabel(j.home_src), away_label: j.away || slotLabel(j.away_src),
+      finished: !!j.finished, home_score: j.home_score, away_score: j.away_score,
+      a: palA ? { home: palA.home, away: palA.away, pontos: ptsA } : null,
+      b: palB ? { home: palB.home, away: palB.away, pontos: ptsB } : null,
+    });
+  }
+  return json({
+    a: { id: aId, name: nome[aId] }, b: { id: bId, name: nome[bId] },
+    totalA, totalB, cravA, cravB, regras, jogos: out,
+  });
 }
 
 // =================================================================
