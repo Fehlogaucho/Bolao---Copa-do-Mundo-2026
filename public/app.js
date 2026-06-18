@@ -50,6 +50,7 @@ const MATA_ORDEM = ['r32','r16','qf','sf','tp','final'];
 
 const KEY = 'sh_bolao_user', PKEY = 'sh_bolao_pool';
 let ME = null, POOL = null, JOGOS = [], FILTRO = '', VISTA = null, aba = 'jogos', RANKING = [], VISITANTE = false;
+let CMP_A = null, CMP_B = null;
 
 const $ = (s) => document.querySelector(s);
 const api = async (path, opts) => {
@@ -91,6 +92,7 @@ const regrasTxt = (r) => r ? `Cravar <b>${r.exato}</b> · vencedor/empate <b>${r
   $('#joinCode').addEventListener('input', e=>{ e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,6); });
   $('#backBtn').onclick = ()=>{ if (VISITANTE){ VISITANTE=false; mostrarGate(); } else irLobby(); };
   $('#membersBtn').onclick = ()=>trocarAba('membros');
+  $('#compareBtn').onclick = ()=>trocarAba('compare');
   $('#pdfBtn').onclick = exportarPDF;
   $('#tabJogos').onclick = ()=>trocarAba('jogos');
   $('#tabGrupos').onclick = ()=>trocarAba('grupos');
@@ -212,11 +214,13 @@ function trocarAba(a){
   $('#viewChave').classList.toggle('hide', a!=='chave');
   $('#viewRank').classList.toggle('hide', a!=='rank');
   $('#viewMembros').classList.toggle('hide', a!=='membros');
-  document.querySelector('nav.tabs').style.display = a==='membros' ? 'none' : '';
+  $('#viewCompare').classList.toggle('hide', a!=='compare');
+  document.querySelector('nav.tabs').style.display = (a==='membros'||a==='compare') ? 'none' : '';
   if (a==='rank') carregarRanking();
   if (a==='chave') renderChave();
   if (a==='grupos') renderGrupos();
   if (a==='membros') carregarMembros();
+  if (a==='compare') renderCompare();
 }
 
 // ================= membros (dono) =================
@@ -249,6 +253,67 @@ async function decidir(targetId, decision){
     toast(decision==='approve'?'Aprovado!':'Recusado.', decision==='approve');
     carregarMembros(); carregarRanking();
   }catch(e){ toast(e.message); }
+}
+
+// ================= comparativo (2 jogadores) =================
+function renderCompare(){
+  // precisa da lista de membros (vem do ranking)
+  if (!RANKING || !RANKING.length){
+    $('#viewCompare').innerHTML = '<div class="spin">carregando…</div>';
+    carregarRanking().then(()=>{ if (aba==='compare') renderCompare(); });
+    return;
+  }
+  const membros = RANKING.map(r=>({ id:r.id, name:r.name }));
+  const back = `<div class="back-row"><button class="btn ghost" id="backFromCompare">← voltar ao bolão</button><span class="hint">🆚 Comparativo</span></div>`;
+  if (membros.length < 2){
+    $('#viewCompare').innerHTML = back + '<div class="empty">Precisa de pelo menos 2 participantes aprovados pra comparar.</div>';
+    $('#backFromCompare').onclick = ()=>trocarAba('jogos');
+    return;
+  }
+  if (!CMP_A || !membros.some(m=>m.id===CMP_A)) CMP_A = (ME && membros.some(m=>m.id===ME.id)) ? ME.id : membros[0].id;
+  if (!CMP_B || CMP_B===CMP_A || !membros.some(m=>m.id===CMP_B)) CMP_B = (membros.find(m=>m.id!==CMP_A) || membros[0]).id;
+  const opts = (sel)=> membros.map(m=>`<option value="${m.id}" ${m.id===sel?'selected':''}>${m.name}</option>`).join('');
+  $('#viewCompare').innerHTML = back +
+    `<div class="cmp-pick">
+       <select id="cmpA" class="cmp-sel">${opts(CMP_A)}</select>
+       <span class="cmp-vs">×</span>
+       <select id="cmpB" class="cmp-sel">${opts(CMP_B)}</select>
+     </div>
+     <div id="compareBody"><div class="spin">carregando…</div></div>`;
+  $('#backFromCompare').onclick = ()=>trocarAba('jogos');
+  $('#cmpA').onchange = (e)=>{ CMP_A=Number(e.target.value); if(CMP_A===CMP_B){ const alt=membros.find(m=>m.id!==CMP_A); if(alt) CMP_B=alt.id; } renderCompare(); };
+  $('#cmpB').onchange = (e)=>{ CMP_B=Number(e.target.value); if(CMP_B===CMP_A){ const alt=membros.find(m=>m.id!==CMP_B); if(alt) CMP_A=alt.id; } renderCompare(); };
+  carregarCompare();
+}
+async function carregarCompare(){
+  try{
+    const d = await api(`compare?pool=${POOL.id}&a=${CMP_A}&b=${CMP_B}`);
+    renderCompareTable(d);
+  }catch(e){ const el=$('#compareBody'); if(el) el.innerHTML = `<div class="empty">${e.message}</div>`; }
+}
+function renderCompareTable(d){
+  const el = $('#compareBody'); if(!el) return;
+  const head = `<div class="cmp-totals">
+      <div class="cmp-side"><span class="cmp-nm">${d.a.name}</span><span class="cmp-pts">${d.totalA}</span><span class="cmp-sub">${d.cravA} cravada(s)</span></div>
+      <div class="cmp-mid">pontos</div>
+      <div class="cmp-side"><span class="cmp-nm">${d.b.name}</span><span class="cmp-pts">${d.totalB}</span><span class="cmp-sub">${d.cravB} cravada(s)</span></div>
+    </div>`;
+  if (!d.jogos.length){ el.innerHTML = head + '<div class="empty">Nenhum palpite revelado ainda. Os palpites aparecem aqui quando fecham (1h antes do jogo).</div>'; return; }
+  const cell = (p, fin, win)=> p
+    ? `<div class="cmp-guess ${win?'win':''}">${p.home}×${p.away}${fin?`<small>${p.pontos>0?'+':''}${p.pontos} pts</small>`:''}</div>`
+    : '<div class="cmp-guess empty">sem palpite</div>';
+  const linhas = d.jogos.map(j=>{
+    const res = j.finished ? `resultado ${j.home_score}×${j.away_score}` : 'aguardando placar';
+    const winA = j.finished && j.a && j.b && j.a.pontos > j.b.pontos;
+    const winB = j.finished && j.a && j.b && j.b.pontos > j.a.pontos;
+    const ctx = j.fase==='grupo' ? 'Grupo '+j.grupo : j.fase_nome;
+    return `<div class="cmp-row">
+       <div class="cmp-match"><span class="cmp-teams">${j.home_label} × ${j.away_label}</span>
+         <span class="cmp-meta">${ctx} · ${res}</span></div>
+       <div class="cmp-guesses">${cell(j.a, j.finished, winA)}<span class="cmp-x">×</span>${cell(j.b, j.finished, winB)}</div>
+     </div>`;
+  }).join('');
+  el.innerHTML = head + linhas;
 }
 
 // ================= jogos =================

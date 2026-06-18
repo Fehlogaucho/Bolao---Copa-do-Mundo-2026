@@ -401,3 +401,29 @@ nav.tabs button{padding:11px 6px;font-size:13px}
   color:var(--muted);font-weight:700;font-size:15px;font-family:inherit;cursor:pointer;transition:.15s;
 }
 .daynav button[aria-selected="true"]{color:var(--text);border-bottom-color:var(--primary)}
+
+/* ===== v8: comparativo (2 jogadores lado a lado) ===== */
+.cmp-pick{display:flex;align-items:center;gap:8px;margin:12px 0}
+.cmp-sel{flex:1;min-width:0;padding:11px;border-radius:10px;border:1px solid var(--line);
+  background:var(--surface-2);color:var(--text);font-family:inherit;font-size:14px;font-weight:700}
+.cmp-sel:focus{outline:none;border-color:var(--primary)}
+.cmp-vs{color:var(--muted);font-weight:800}
+.cmp-totals{display:flex;align-items:center;justify-content:space-between;background:var(--surface);
+  border:1px solid var(--line);border-radius:var(--radius);padding:14px;margin-bottom:12px}
+.cmp-side{display:flex;flex-direction:column;align-items:center;gap:1px;flex:1;min-width:0}
+.cmp-nm{font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.cmp-pts{font-family:'Anton',sans-serif;font-size:30px;color:var(--primary);line-height:1}
+.cmp-sub{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+.cmp-mid{font-size:10px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);padding:0 8px;flex:none}
+.cmp-row{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px}
+.cmp-match{display:flex;flex-direction:column;margin-bottom:8px}
+.cmp-teams{font-weight:700;font-size:14px;line-height:1.2}
+.cmp-meta{font-size:11px;color:var(--muted);margin-top:1px}
+.cmp-guesses{display:flex;align-items:stretch;gap:8px}
+.cmp-guess{flex:1;text-align:center;background:var(--surface-2);border:1px solid var(--line);
+  border-radius:8px;padding:7px 4px;font-family:'Anton',sans-serif;font-size:18px;color:var(--text)}
+.cmp-guess small{display:block;font-family:'Archivo',sans-serif;font-size:11px;font-weight:700;color:var(--mint);margin-top:2px}
+.cmp-guess.win{border-color:var(--mint);box-shadow:0 0 0 1px rgba(91,224,165,.3)}
+.cmp-guess.win small{color:var(--mint)}
+.cmp-guess.empty{color:var(--muted);font-family:'Archivo',sans-serif;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center}
+.cmp-x{color:var(--muted);font-weight:800;align-self:center}
